@@ -1,54 +1,33 @@
-import feedparser
-from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from apscheduler.schedulers.background import BackgroundScheduler
+from telegram.ext import Application, CommandHandler
 import asyncio
+import feedparser
+import time
 
-# === CONFIG ===
-BOT_TOKEN = "8190809278:AAGvbZ44FhlQmp-6V4Yxa2KboiYeRhExGUo"  # Paste your BotFather token here
-FEED_URL = "https://feeds.feedburner.com/crunchyroll/rss/anime"  # change if you want
-CHAT_ID = None  # this will be set when user sends /start
+BOT_TOKEN = "8190809278:AAGvbZ44FhlQmp-6V4Yxa2KboiYeRhExGUo"
+RSS_URL = "https://feeds.feedburner.com/crunchyroll/rss/anime"
+CHAT_ID = "1958424381"  # your Telegram user ID or group ID
 
-latest_title = None
+def start(update, context):
+    update.message.reply_text("✅ RSS Reader Bot activated!")
 
-def get_latest_entry():
-    feed = feedparser.parse(FEED_URL)
+def fetch_rss(context):
+    feed = feedparser.parse(RSS_URL)
     if not feed.entries:
-        return None
-    entry = feed.entries[0]
-    return {"title": entry.title, "link": entry.link}
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global CHAT_ID
-    CHAT_ID = update.effective_chat.id
-    await update.message.reply_text("✅ RSS Reader Bot activated! You’ll get updates automatically.")
-    print(f"Registered chat ID: {CHAT_ID}")
-
-async def check_feed(bot):
-    global latest_title, CHAT_ID
-    if CHAT_ID is None:
         return
-    entry = get_latest_entry()
-    if entry and entry["title"] != latest_title:
-        latest_title = entry["title"]
-        await bot.send_message(chat_id=CHAT_ID, text=f"🆕 *{entry['title']}*\n{entry['link']}", parse_mode="Markdown")
+    latest_entry = feed.entries[0]
+    title = latest_entry.title
+    link = latest_entry.link
+    context.bot.send_message(chat_id=CHAT_ID, text=f"📰 *{title}*\n{link}", parse_mode="Markdown")
 
-async def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+def main():
+    app = Application.builder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
 
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(lambda: asyncio.create_task(check_feed(app.bot)), "interval", minutes=1)
-    scheduler.start()
+    # Run the job every 5 minutes
+    app.job_queue.run_repeating(fetch_rss, interval=300, first=10)
 
     print("Bot is running on Render...")
-    await app.run_polling()
+    app.run_polling()  # synchronous, no async loop issues
 
 if __name__ == "__main__":
-    import asyncio
-    try:
-        asyncio.get_event_loop().run_until_complete(main())
-    except RuntimeError:
-        # Fallback for environments (like Render) where loop is already running
-        asyncio.get_event_loop_policy().new_event_loop().run_until_complete(main())
-
+    main()
