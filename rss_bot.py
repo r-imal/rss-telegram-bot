@@ -1,33 +1,52 @@
-from telegram.ext import Application, CommandHandler
 import asyncio
 import feedparser
-import time
+from telegram import Bot
+from telegram.ext import ApplicationBuilder, CommandHandler
 
-BOT_TOKEN = "8190809278:AAGvbZ44FhlQmp-6V4Yxa2KboiYeRhExGUo"
-RSS_URL = "https://feeds.feedburner.com/crunchyroll/rss/anime"
-CHAT_ID = "1958424381"  # your Telegram user ID or group ID
+# --- CONFIG ---
+TOKEN = "8190809278:AAGvbZ44FhlQmp-6V4Yxa2KboiYeRhExGUo"
+CHAT_ID = "1958424381"  # replace with your chat ID
+RSS_FEED_URL = "https://feeds.feedburner.com/crunchyroll/rss/anime"
+CHECK_INTERVAL = 10  # seconds between RSS checks
 
-def start(update, context):
-    update.message.reply_text("✅ RSS Reader Bot activated!")
+# Store already sent entries
+sent_entries = set()
 
-def fetch_rss(context):
-    feed = feedparser.parse(RSS_URL)
-    if not feed.entries:
-        return
-    latest_entry = feed.entries[0]
-    title = latest_entry.title
-    link = latest_entry.link
-    context.bot.send_message(chat_id=CHAT_ID, text=f"📰 *{title}*\n{link}", parse_mode="Markdown")
+# --- BOT SETUP ---
+async def start(update, context):
+    await update.message.reply_text("RSS Bot is running!")
 
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
+# --- RSS CHECK ---
+async def send_new_entries(app):
+    feed = feedparser.parse(RSS_FEED_URL)
+    for entry in feed.entries:
+        if entry.id not in sent_entries:
+            try:
+                await app.bot.send_message(
+                    chat_id=CHAT_ID,
+                    text=f"New episode: {entry.title}\n{entry.link}"
+                )
+                sent_entries.add(entry.id)
+            except Exception as e:
+                print(f"Error sending message: {e}")
+
+# --- PERIODIC TASK ---
+async def periodic_rss_check(app):
+    while True:
+        await send_new_entries(app)
+        await asyncio.sleep(CHECK_INTERVAL)
+
+# --- MAIN ---
+async def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+    
     app.add_handler(CommandHandler("start", start))
-
-    # Run the job every 5 minutes
-    app.job_queue.run_repeating(fetch_rss, interval=300, first=10)
-
-    print("Bot is running on Render...")
-    app.run_polling()  # synchronous, no async loop issues
+    
+    # Start periodic RSS check
+    asyncio.create_task(periodic_rss_check(app))
+    
+    print("Bot is running...")
+    await app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
